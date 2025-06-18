@@ -18,7 +18,7 @@ uv run write.py "hello world" --seed 23 --bias 20
 
 This should give you the following:
 
-![hello world](assets/images/hello world.png)
+![hello world](https://raw.githubusercontent.com/anomam/soft-window-transformers/main/assets/images/hello%20world.png)
 
 As a rule of thumb, you can play with the `seed` parameter if some letters are missing/wrong, and with the `bias`
 parameter to improve the legibility.
@@ -29,7 +29,7 @@ That's one of the points to be improved with the model. For instance:
 ```bash
 uv run write.py "handwriting syntthesiss" --seed 213 --bias 10
 ```
-![handwriting synthesis](assets/images/handwriting synthesis.png)
+![handwriting synthesis](https://raw.githubusercontent.com/anomam/soft-window-transformers/main/assets/images/handwriting%20synthesis.png)
 
 
 All additional options will be printed when running:
