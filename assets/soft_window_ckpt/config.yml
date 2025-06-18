@@ -1,0 +1,9 @@
+window_size: 1200  # max time length of decoder inputs
+d_soft_window_attention: 128  # dimension of attention space for kappa
+n_soft_window_gaussians: 10
+decoder_hidden_size: 300
+n_heads_first_layer: 3
+n_layers_first_layer: 1
+n_heads_after: 3
+n_layers_after: 2
+n_gaussians_mdn: 20
