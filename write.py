@@ -1,6 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
+#     "imageio>=2.37.0",
 #     "matplotlib>=3.10.3",
 #     "numpy",
 #     "pydantic>=2.11.7",
@@ -16,9 +17,11 @@ import math
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from enum import Enum
+from io import BytesIO
 from pathlib import Path
 from typing import Callable, Final, Iterator, NamedTuple, Optional, Self
 
+import imageio.v2 as imageio
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -87,9 +90,10 @@ def offsets_to_coords(offsets: np.ndarray) -> np.ndarray:
 def _split_coords_to_strokes(coords: np.ndarray) -> list[np.ndarray]:
     # Find indices where the split should occur
     split_points = np.where(coords[:, :, -1] == 1)[1]
+    T = coords.shape[1]
 
     # Add start and end indices
-    all_points = np.concatenate(([0], split_points + 1, [len(coords)]))
+    all_points = np.concatenate(([0], split_points + 1, [T]))
 
     # Create splits using the indices
     splits = [coords[0, all_points[i] : all_points[i + 1], :] for i in range(len(all_points) - 1)]
@@ -112,6 +116,7 @@ def plot_coords(
     style: Style = Style(),
     ax: Optional[Axes] = None,
     highlight_mask: Optional[np.ndarray] = None,
+    seed: int = 42,
 ) -> Axes:
     """
     Expected dimensions for coords: (1, time, strokes)
@@ -119,8 +124,9 @@ def plot_coords(
     if not ax:
         _, ax = plt.subplots()
     splits = _split_coords_to_strokes(coords)
+    rng = np.random.default_rng(seed)
     for split in splits:
-        color = np.random.rand(3).tolist() if style.rainbow else "k"
+        color = rng.random(3).tolist() if style.rainbow else "k"
         ax.plot(split[:, 0], -split[:, 1], color=color, linewidth=style.lw)
     if label is not None:
         ax.set_title(label)
@@ -727,17 +733,34 @@ class BaseHandWriter(ABC):
         self._tokenizer = tokenizer
 
     @abstractmethod
-    def write_offsets(self, seq_len: int, text: str, bias: float = 0.0) -> np.ndarray:
+    def write_offsets(self, seq_len: int, text: str, bias: float = 0.0) -> tuple[np.ndarray, int]:
         raise NotImplementedError
 
-    def write_and_plot(self, seq_len: int, text: str, bias: float = 0.0) -> tuple[Figure, Axes]:
-        x = self.write_offsets(seq_len=seq_len, text=text, bias=bias)
+    def write_and_plot(
+        self, seq_len: int, text: str, bias: float = 0.0, with_gif: bool = False
+    ) -> tuple[Figure, Axes, list[np.ndarray]]:
+        x, t = self.write_offsets(seq_len=seq_len, text=text, bias=bias)
 
         # plot
-        f, ax = plt.subplots()
+        frames: list[np.ndarray] = []
         coords = offsets_to_coords(x[0])
+        if with_gif:
+            for i in range(t + 1):
+                f, ax = plt.subplots()
+                to_plot = coords[: i + 1][None]
+                plot_coords(to_plot, ax=ax)  # unsqueeze
+                ax.set_xlim(-5, 80)
+                ax.set_ylim(-17, 3)
+                ax.axis("off")
+                buf = BytesIO()
+                f.savefig(buf)
+                buf.seek(0)
+                frames.append(imageio.imread(buf))
+                plt.close(f)
+
+        f, ax = plt.subplots()
         plot_coords(coords[None], ax=ax)  # unsqueeze
-        return f, ax
+        return f, ax, frames
 
     def _init_x(self, batch_size: int, device: torch.device) -> SequenceData[Tensor]:
         x_len = torch.ones((batch_size, 1), device=device)
@@ -778,8 +801,9 @@ class XfmHandwriter(BaseHandWriter):
         self._overlap = overlap
         self._window_size = est.window_size
 
-    def write_offsets(self, seq_len: int, text: str, bias: float = 0.0) -> np.ndarray:
+    def write_offsets(self, seq_len: int, text: str, bias: float = 0.0) -> tuple[np.ndarray, int]:
         batch_size = 1
+        t = 0
         with eval_mode(self._est):
             # init
             device = get_device(self._est)
@@ -803,7 +827,7 @@ class XfmHandwriter(BaseHandWriter):
                 next_x = SequenceData(all_xs[:, t + 1 - window_len : t + 1, :], window_len * length_one)
                 inputs = (next_x, label)
 
-        return all_xs.detach().cpu().numpy()
+        return all_xs.detach().cpu().numpy(), t
 
     def _predict_next_offset(self, params: HwOutputs) -> torch.Tensor:
         # sample pen lift
@@ -843,8 +867,9 @@ def handwrite(
     seq_len: int = 800,
     seed: Optional[int] = None,
     model_type: TypeModel = TypeModel.soft_window,
-    show: bool = False,
+    with_gif: bool = False,
 ) -> None:
+    """If using `with_gif`, you will have to set the xlim and ylim of the plot by hand"""
     # seeding
     if seed is not None:
         torch.manual_seed(seed)
@@ -858,10 +883,14 @@ def handwrite(
     module = load_module(dir_dump, tokenizer.vocab_size)
     # create writer
     writer = XfmHandwriter(module, tokenizer)
-    f, ax = writer.write_and_plot(seq_len=seq_len, text=text, bias=bias)
-    ax.axis('off')
+    f, ax, frames = writer.write_and_plot(seq_len=seq_len, text=text, bias=bias, with_gif=with_gif)
+    fname = f"{text}_{dt.datetime.now().isoformat()}"
+    if with_gif:
+        imageio.mimsave(fname + ".gif", frames, fps=40)
+
+    ax.axis("off")
     plt.show()
-    f.savefig(f"{text}_{dt.datetime.now().isoformat()}.png")
+    f.savefig(fname + ".png")
 
 
 if __name__ == "__main__":

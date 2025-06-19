@@ -1,6 +1,10 @@
+![handwriting synthesis](https://raw.githubusercontent.com/anomam/soft-window-transformers/main/assets/images/handwriting%20synthesis.gif)
+
 # Soft Window with Transformers for Handwriting Synthesis
 
 You can find a detailed write-up about this project [here](https://blog.anomam.com/posts/2025-06-18-soft-window-transformers-hw-synthesis).
+
+I decided to go with a single module `write.py` so that it's more easily hackable to your needs.
 
 ## Dependencies
 
